@@ -9,170 +9,166 @@
 #include <resolv.h>
 #include "openssl/ssl.h"
 #include "openssl/err.h"
-#define FAIL    -1
-// Create the SSL socket and intialize the socket address structure
-int OpenListener(int port)
-{
-    int sd;
+
+#define FAIL            -1
+#define CERT_NAME       "mycert.pem"
+
+int open_SSL_listener(int port) {
     struct sockaddr_in addr;
-    sd = socket(PF_INET, SOCK_STREAM, 0);
+    int    sd = socket(PF_INET, SOCK_STREAM, 0);
+
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(sd, (struct sockaddr*)&addr, sizeof(addr)) != 0 )
-    {
+    if (bind(sd, (struct sockaddr*)&addr, sizeof(addr)) != 0 ) {
         perror("can't bind port");
         abort();
     }
-    if ( listen(sd, 10) != 0 )
-    {
+
+    if (listen(sd, 10) != 0) {
         perror("Can't configure listening port");
         abort();
     }
+
     return sd;
 }
-int isRoot()
-{
-    if (getuid() != 0)
-    {
-        return 0;
-    }
-    else
-    {
-        return 1;
-    }
+
+int is_root() {
+    return (getuid() == 0);
 }
-SSL_CTX* InitServerCTX(void)
-{
-    SSL_METHOD *method;
-    SSL_CTX *ctx;
-    OpenSSL_add_all_algorithms();  /* load & register all cryptos, etc. */
-    SSL_load_error_strings();   /* load all error messages */
-    method = TLSv1_2_server_method();  /* create new server-method instance */
-    ctx = SSL_CTX_new(method);   /* create new context from method */
-    if ( ctx == NULL )
-    {
+
+SSL_CTX* init_SSL_CTX(void) {
+    SSL_CTX    *ctx;
+
+    OpenSSL_add_all_algorithms();   // load & register all cryptos, etc.
+    SSL_load_error_strings();       // load all error messages
+    const SSL_METHOD *method = TLS_server_method();  // create new server-method instance
+    ctx = SSL_CTX_new(method);      // create new context from method
+    if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
         abort();
     }
     return ctx;
 }
-void LoadCertificates(SSL_CTX* ctx, char* CertFile, char* KeyFile)
-{
-    /* set the local certificate from CertFile */
-    if ( SSL_CTX_use_certificate_file(ctx, CertFile, SSL_FILETYPE_PEM) <= 0 )
-    {
+
+void load_cert_key(SSL_CTX* ctx, char* cert, char* key) {
+    // set the local certificate from cert
+    if (SSL_CTX_use_certificate_file(ctx, cert, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
         abort();
     }
-    /* set the private key from KeyFile (may be the same as CertFile) */
-    if ( SSL_CTX_use_PrivateKey_file(ctx, KeyFile, SSL_FILETYPE_PEM) <= 0 )
-    {
+
+    // set the private key from key (may be the same as cert)
+    if (SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) <= 0) {
         ERR_print_errors_fp(stderr);
         abort();
     }
-    /* verify private key */
-    if ( !SSL_CTX_check_private_key(ctx) )
-    {
+
+    // verify private key
+    if (!SSL_CTX_check_private_key(ctx)) {
         fprintf(stderr, "Private key does not match the public certificate\n");
         abort();
     }
 }
-void ShowCerts(SSL* ssl)
-{
+
+void show_certs(SSL* ssl) {
     X509 *cert;
     char *line;
-    cert = SSL_get_peer_certificate(ssl); /* Get certificates (if available) */
-    if ( cert != NULL )
-    {
+
+    cert = SSL_get_peer_certificate(ssl); // Get certificates (if available)
+    if (cert != NULL) {
         printf("Server certificates:\n");
+
         line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
         printf("Subject: %s\n", line);
         free(line);
+
         line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
         printf("Issuer: %s\n", line);
         free(line);
+
         X509_free(cert);
-    }
-    else
+    } else {
         printf("No certificates.\n");
+    }
 }
-void Servlet(SSL* ssl) /* Serve the connection -- threadable */
+
+void read_client(SSL* ssl) /* Serve the connection -- threadable */
 {
     char buf[1024] = {0};
-    int sd, bytes;
-    const char* ServerResponse="<\Body>\
-                               <Name>aticleworld.com</Name>\
-                 <year>1.5</year>\
-                 <BlogType>Embedede and c\c++<\BlogType>\
-                 <Author>amlendra<Author>\
-                 <\Body>";
-    const char *cpValidMessage = "<Body>\
-                               <UserName>aticle<UserName>\
-                 <Password>123<Password>\
-                 <\Body>";
-    if ( SSL_accept(ssl) == FAIL )     /* do SSL-protocol accept */
+    int  sd;
+    int  bytes;
+    const char* response = "<body>"
+                             "<name>aticleworld.com</name>"
+                             "<year>1.5</year>"
+                             "<blogtype>Embedede and C/C++</blogtype>"
+                             "<author>amlendra</author>"
+                           "</body>";
+
+    const char *valid_msg = "<body>"
+                              "<username>aticle</username>"
+                              "<password>123</password>"
+                            "</body>";
+
+    if ( SSL_accept(ssl) == FAIL ) {                // do SSL-protocol accept
         ERR_print_errors_fp(stderr);
-    else
-    {
-        ShowCerts(ssl);        /* get any certificates */
-        bytes = SSL_read(ssl, buf, sizeof(buf)); /* get request */
-        buf[bytes] = '\0';
-        printf("Client msg: \"%s\"\n", buf);
-        if ( bytes > 0 )
-        {
-            if(strcmp(cpValidMessage,buf) == 0)
-            {
-                SSL_write(ssl, ServerResponse, strlen(ServerResponse)); /* send reply */
+    } else {
+        show_certs(ssl);                            // Show local certificates
+        memset(buf, 0, sizeof(buf));
+        bytes = SSL_read(ssl, buf, sizeof(buf));    // Read client request
+
+        printf("Client msg: [%s]\n", buf);
+        if (bytes > 0) {
+            if(strcmp(valid_msg, buf) == 0) {
+                SSL_write(ssl, response, strlen(response));                   // send valid reply
+            } else {
+                SSL_write(ssl, "Invalid Message", strlen("Invalid Message")); // send reply
             }
-            else
-            {
-                SSL_write(ssl, "Invalid Message", strlen("Invalid Message")); /* send reply */
-            }
-        }
-        else
-        {
+        } else {
             ERR_print_errors_fp(stderr);
         }
     }
-    sd = SSL_get_fd(ssl);       /* get socket connection */
-    SSL_free(ssl);         /* release SSL state */
-    close(sd);          /* close connection */
+    sd = SSL_get_fd(ssl);        // get socket connection
+    SSL_free(ssl);               // release SSL state
+    close(sd);                   // close connection
 }
-int main(int count, char *Argc[])
-{
+
+int main(int argc, char *argv[]) {
     SSL_CTX *ctx;
-    int server;
-    char *portnum;
-//Only root user have the permsion to run the server
-    if(!isRoot())
-    {
-        printf("This program must be run as root/sudo user!!");
+    int      sock;
+    char    *port_num;
+
+    //Only root user have the permsion to run the server
+    if(!is_root()) {
+        printf("This program must be run as root/sudo user!!\n");
         exit(0);
     }
-    if ( count != 2 )
-    {
-        printf("Usage: %s <portnum>\n", Argc[0]);
+
+    if ( argc != 2 ) {
+        printf("Usage: %s <port_num>\n", argv[0]);
         exit(0);
     }
+
+    port_num = argv[1];
+
     // Initialize the SSL library
     SSL_library_init();
-    portnum = Argc[1];
-    ctx = InitServerCTX();        /* initialize SSL */
-    LoadCertificates(ctx, "mycert.pem", "mycert.pem"); /* load certs */
-    server = OpenListener(atoi(portnum));    /* create server socket */
-    while (1)
-    {
+    ctx = init_SSL_CTX();                         // initialize SSL
+    load_cert_key(ctx, CERT_NAME, CERT_NAME);     // load certificate
+    sock = open_SSL_listener(atoi(port_num));     // create server socket
+
+    while (1) {
         struct sockaddr_in addr;
-        socklen_t len = sizeof(addr);
-        SSL *ssl;
-        int client = accept(server, (struct sockaddr*)&addr, &len);  /* accept connection as usual */
-        printf("Connection: %s:%d\n",inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-        ssl = SSL_new(ctx);              /* get new SSL state with context */
-        SSL_set_fd(ssl, client);      /* set connection socket to SSL state */
-        Servlet(ssl);         /* service connection */
+        socklen_t          len = sizeof(addr);
+        SSL               *ssl;
+        int client = accept(sock, (struct sockaddr*)&addr, &len);  // accept connection as usual
+        printf("Connection: %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+        ssl = SSL_new(ctx);                                        // get new SSL state with context
+        SSL_set_fd(ssl, client);                                   // set connection socket to SSL state
+        read_client(ssl);                                              // service connection
     }
-    close(server);          /* close server socket */
-    SSL_CTX_free(ctx);         /* release context */
+
+    close(sock);          // close server socket
+    SSL_CTX_free(ctx);    // release context
 }

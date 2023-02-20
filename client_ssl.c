@@ -105,9 +105,9 @@ int main(int argc, char *argv[]) {
         char username[16] = {0};
         char password[16] = {0};
         const char *request = "<body>"
-                                "<username>%s<username>"
-                                "<password>%s<password>"
-                              "<body>";
+                                "<username>%s</username>"
+                                "<password>%s</password>"
+                              "</body>";
 
         printf("Enter the Username: ");
         scanf("%s", username);

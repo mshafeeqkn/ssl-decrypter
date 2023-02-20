@@ -13,7 +13,9 @@ SSL_LIB=openssl/libssl.so.3
 SSL_MAKE=openssl/Makefile
 SSL_CONFIGURE=openssl/Configure
 
-all: $(SSL_LIB) $(CLIENT) $(SERVER)
+CERT=mycert.pem
+
+all: $(SSL_LIB) $(CLIENT) $(SERVER) $(CERT)
 
 #
 # library build
@@ -32,6 +34,9 @@ $(CLIENT): $(CLIENT_OBJ)
 
 $(SERVER): $(SERVER_OBJ)
 	$(CC) $(SERVER_OBJ) -o $(SERVER) $(LDFLAGS) $(LIBS)
+
+$(CERT):
+	openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout mycert.pem -out mycert.pem
 
 .c.o:
 	$(CC) $(LIBS) $(LDFLAGS) $(INCLUDES) -c -o $@ $<
