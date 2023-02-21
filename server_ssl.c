@@ -114,20 +114,34 @@ void read_client(SSL* ssl) /* Serve the connection -- threadable */
     if ( SSL_accept(ssl) == FAIL ) {                // do SSL-protocol accept
         ERR_print_errors_fp(stderr);
     } else {
-        show_certs(ssl);                            // Show local certificates
-        memset(buf, 0, sizeof(buf));
-        bytes = SSL_read(ssl, buf, sizeof(buf));    // Read client request
+        X509 *client_cert = SSL_get_peer_certificate(ssl);
+        if (client_cert) {
+            if (SSL_get_verify_result(ssl) == X509_V_OK) {
+                // Client certificate is valid.
+                show_certs(ssl);                            // Show local certificates
+                memset(buf, 0, sizeof(buf));
+                bytes = SSL_read(ssl, buf, sizeof(buf));    // Read client request
 
-        printf("Client msg: [%s]\n", buf);
-        if (bytes > 0) {
-            if(strcmp(valid_msg, buf) == 0) {
-                SSL_write(ssl, response, strlen(response));                   // send valid reply
+                printf("Client msg: [%s]\n", buf);
+                if (bytes > 0) {
+                    if(strcmp(valid_msg, buf) == 0) {
+                        SSL_write(ssl, response, strlen(response));                   // send valid reply
+                    } else {
+                        SSL_write(ssl, "Invalid Message", strlen("Invalid Message")); // send reply
+                    }
+                } else {
+                    ERR_print_errors_fp(stderr);
+                }
             } else {
-                SSL_write(ssl, "Invalid Message", strlen("Invalid Message")); // send reply
+                printf("Client certificate is not valid\n");
+                return;
             }
+            X509_free(client_cert);
         } else {
-            ERR_print_errors_fp(stderr);
+            printf("Client did not provide a certificate\n");
+            return;
         }
+
     }
     sd = SSL_get_fd(ssl);        // get socket connection
     SSL_free(ssl);               // release SSL state
@@ -159,16 +173,17 @@ int main(int argc, char *argv[]) {
     SSL_CTX_set_max_proto_version(ctx, TLS1_VERSION);
     load_cert_key(ctx, CERT_NAME, CERT_NAME);     // load certificate
     sock = open_SSL_listener(atoi(port_num));     // create server socket
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL); // Client certificate required and verify
+    SSL_CTX_load_verify_locations(ctx, "ca_cert.crt", NULL);
 
     while (1) {
         struct sockaddr_in addr;
-        socklen_t          len = sizeof(addr);
-        SSL               *ssl;
+        socklen_t len = sizeof(addr);
+        SSL *ssl = SSL_new(ctx);                                   // get new SSL state with context
         int client = accept(sock, (struct sockaddr*)&addr, &len);  // accept connection as usual
         printf("Connection: %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-        ssl = SSL_new(ctx);                                        // get new SSL state with context
         SSL_set_fd(ssl, client);                                   // set connection socket to SSL state
-        read_client(ssl);                                              // service connection
+        read_client(ssl);                                          // service connection
     }
 
     close(sock);          // close server socket

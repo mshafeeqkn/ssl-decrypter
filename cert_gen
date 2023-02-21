@@ -1,0 +1,45 @@
+#!/bin/bash
+
+CERT_DIR=$HOME/bin/certs
+openssl version > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "openssl cli utility is not installed or an old version"
+fi
+
+if [ $# -ne 1 ]; then
+    echo "Usage: cert_gen <IP address>"
+    exit 1
+fi
+
+if [ -f $CERT_DIR/ca.pem ]; then
+    echo "## CA certificate present. Using it."
+else
+    echo "## Creating CA certificate..."
+    rm -f $CERT_DIR/ca.key
+
+    # Generate RSA Key pair
+    openssl genrsa -out $CERT_DIR/ca.key 2048
+    openssl req -x509 -new -nodes -key $CERT_DIR/ca.key -sha256 -days 3650 -out $CERT_DIR/ca.pem -subj "/C=IN/ST=KL/L=EKM/O=ThinkPalm Technologies/CN=thinkpalm.com"
+    echo "## CA certificate created successfully"
+fi
+
+echo "## Creating $CERT_DIR/dev_$1.key"
+openssl genrsa -out "$CERT_DIR/dev_$1.key" 2048
+
+echo "## Creating $CERT_DIR/dev_$1.csr"
+openssl req -new -key $CERT_DIR/dev_$1.key -out $CERT_DIR/dev_$1.csr -subj "/C=IN/ST=KL/L=EKM/O=ThinkPalm Technologies/CN=$1"
+
+if [ ! -f $CERT_DIR/ca.srl ]; then
+    echo "00" > $CERT_DIR/ca.srl
+fi
+
+echo "## Creating Cerificate signed by CA"
+openssl x509 -req -in $CERT_DIR/dev_$1.csr -CA $CERT_DIR/ca.pem -CAkey $CERT_DIR/ca.key -CAserial $CERT_DIR/ca.srl -out $CERT_DIR/dev_$1.crt -days 2555 -sha256
+
+echo "## Removing $CERT_DIR/dev_$1.csr"
+rm $CERT_DIR/dev_$1.csr
+
+echo "## Creating combined file $CERT_DIR/dev_$1.pem"
+cp $CERT_DIR/dev_$1.crt $CERT_DIR/dev_$1.pem
+cat $CERT_DIR/dev_$1.key >> $CERT_DIR/dev_$1.pem
+

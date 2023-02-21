@@ -3,3 +3,7 @@ client
 server
 tags
 *.pem
+*.key
+*.crt
+*.pcap
+*.srl

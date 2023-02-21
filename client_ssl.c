@@ -8,7 +8,9 @@
 #include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+
 #define FAIL    -1
+#define CERT_NAME       "mycert.pem"
 
 int open_SSL_connection(const char *hostname, int port)
 {
@@ -74,7 +76,28 @@ void show_certificates(SSL* ssl)
     }
 }
 
-int main(int argc, char *argv[]) {
+void load_cert_key(SSL_CTX* ctx, char* cert, char* key) {
+    // set the local certificate from cert
+    if (SSL_CTX_use_certificate_file(ctx, cert, SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        abort();
+    }
+
+    // set the private key from key (may be the same as cert)
+    if (SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        abort();
+    }
+
+    // verify private key
+    if (!SSL_CTX_check_private_key(ctx)) {
+        fprintf(stderr, "Private key does not match the public certificate\n");
+        abort();
+    }
+}
+
+
+int main_client(int argc, char *argv[]) {
     int      server_sock;
     char     buf[1024];
     int      bytes;
@@ -96,6 +119,7 @@ int main(int argc, char *argv[]) {
     ctx = init_SSL_CTX();
     SSL_CTX_set_min_proto_version(ctx, TLS1_VERSION);
     SSL_CTX_set_max_proto_version(ctx, TLS1_VERSION);
+    load_cert_key(ctx, CERT_NAME, CERT_NAME);     // load certificate
 
     server_sock = open_SSL_connection(hostname, atoi(port_num));
     ssl = SSL_new(ctx);                 // create new SSL connection state
@@ -131,4 +155,8 @@ int main(int argc, char *argv[]) {
     close(server_sock);                                                 // close socket
     SSL_CTX_free(ctx);                                                  // release context
     return 0;
+}
+
+int main(int argc, char *argv[]) {
+    printf("Something\n");
 }
