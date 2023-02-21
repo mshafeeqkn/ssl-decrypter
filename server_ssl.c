@@ -43,7 +43,7 @@ SSL_CTX* init_SSL_CTX(void) {
 
     OpenSSL_add_all_algorithms();   // load & register all cryptos, etc.
     SSL_load_error_strings();       // load all error messages
-    const SSL_METHOD *method = TLS_server_method();  // create new server-method instance
+    const SSL_METHOD *method = TLS_method();  // create new server-method instance
     ctx = SSL_CTX_new(method);      // create new context from method
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
@@ -155,6 +155,8 @@ int main(int argc, char *argv[]) {
     // Initialize the SSL library
     SSL_library_init();
     ctx = init_SSL_CTX();                         // initialize SSL
+    SSL_CTX_set_min_proto_version(ctx, TLS1_VERSION);
+    SSL_CTX_set_max_proto_version(ctx, TLS1_VERSION);
     load_cert_key(ctx, CERT_NAME, CERT_NAME);     // load certificate
     sock = open_SSL_listener(atoi(port_num));     // create server socket
 
